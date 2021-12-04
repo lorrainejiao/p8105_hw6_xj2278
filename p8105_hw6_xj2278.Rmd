@@ -86,12 +86,14 @@ Creating a model using length at birth and gestational age as predictors:
 
 ```{r}
 fit_1 = lm(bwt ~ blength + gaweeks, data = birthweight)
+fit_1 %>% broom::tidy()
 ```
 
 Creating a model using head circumference, length, sex, and all interactions (including the three-way interaction) between these: 
 
 ```{r}
 fit_2 = lm(bwt ~ bhead * blength * babysex, data = birthweight)
+fit_2 %>% broom::tidy()
 ```
 
 Make this comparison in terms of the cross-validated prediction error: 
@@ -136,4 +138,69 @@ fit_cv %>%
 
 According to the violin plot, our model has the best fitness since it has the RMSE with the lowest median. 
 
+# Problem 2
+
+```{r}
+#Load the data
+weather_df = 
+  rnoaa::meteo_pull_monitors(
+    c("USW00094728"),
+    var = c("PRCP", "TMIN", "TMAX"), 
+    date_min = "2017-01-01",
+    date_max = "2017-12-31") %>%
+  mutate(
+    name = recode(id, USW00094728 = "CentralPark_NY"),
+    tmin = tmin / 10,
+    tmax = tmax / 10) %>%
+  select(name, id, everything())
+```
+
+Bootstrapping for 5000 times: 
+
+```{r}
+set.seed(1)
+
+boot_straps = 
+  weather_df %>%
+  bootstrap(5000, id = "strap_number") %>%
+  mutate(
+    models = map(.x = strap, ~lm(tmax ~ tmin, data = .x)),
+    results_glance = map(models, broom::glance),
+    results_tidy = map(models, broom::tidy)
+  )
+```
+
+#### The ditribution of r.squared
+
+```{r}
+r_dist = 
+  boot_straps %>% 
+  select(strap_number, results_glance) %>% 
+  unnest(results_glance) %>% 
+  select(r.squared) 
+
+r_dist %>% 
+  ggplot(aes(x = r.squared)) + 
+  geom_density() + 
+  labs(
+    title = "Distribution of R squared",
+    x = "R Squared",
+    y = "Frequency"
+  ) 
+
+```
+
+The density plot shows that $r^2$ follows an approximately normal distribution with a mean of `r r_dist %>% pull(r.squared) %>% mean()`. 
+
+```{r}
+r_dist %>% 
+  summarize(
+    ci_lower = quantile(r.squared, 0.025), 
+    ci_upper = quantile(r.squared, 0.975)  
+  )
+```
+
+The 95% confidence interval of the estimated $r^2$ value is (0.894, 0.927). 
+
+#### The distribution of $log(beta_0 ∗ beta_1)$ 
 
