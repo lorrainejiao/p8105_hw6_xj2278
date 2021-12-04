@@ -1,0 +1,130 @@
+---
+title: "Homework 6"
+output: github_document
+---
+
+```{r setup, message = FALSE}
+library(tidyverse)
+library(modelr)
+
+
+knitr::opts_chunk$set(
+  fig.width = 6, 
+  fig.asp = .6,
+  out.width = "90%")
+
+theme_set(theme_minimal() + theme(legend.position = "bottom"))
+
+options(
+  ggplot2.continuous.colour = "viridis",
+  ggplot2.continuous.fill = "viridis"
+)
+
+scale_colour_discrete = scale_colour_viridis_d
+scale_fill_discrete = scale_fill_viridis_d
+```
+
+## Problem 1
+```{r}
+#Load the data
+birthweight = read_csv("./data/birthweight.csv") 
+#Clean the data
+birthweight =
+  birthweight %>% 
+  mutate(
+    babysex = ifelse(babysex == 1, "male", "female"),
+    babysex = as.factor(babysex),
+    frace = case_when(
+      frace == 1 ~ "White", 
+      frace == 2 ~ "Black", 
+      frace == 3 ~ "Asian",
+      frace == 4 ~ "Puerto Rican",
+      frace == 8 ~ "Other",
+      frace == 9 ~ "Unknown"),
+    mrace = case_when(
+      mrace == 1 ~ "White", 
+      mrace == 2 ~ "Black", 
+      mrace == 3 ~ "Asian",
+      mrace == 4 ~ "Puerto Rican",
+      mrace == 8 ~ "Other"),
+   malform = ifelse(malform == 0, "absent", "present"), 
+    malform = as.factor(malform))
+```
+
+#### Propose a regression model for birthweight
+
+I choose to fit the model on a data-driven model-building process, which is the step-wise regression:  
+
+```{r}
+fit = 
+  lm(bwt ~., data = birthweight) %>% 
+  step(direction = "both")
+```
+
+```{r}
+summary(fit)$coef
+```
+
+By calculating the AIC scores for hypothetical models to determine which variable should be included and which should be removed, the final regression model for birthweight should include babysexmale, bhead, blength, delwt, fincome, gaweeks, mheight, mrace, parity, ppwt, smoken. 
+
+#### a plot of model residuals against fitted values 
+```{r}
+birthweight %>% 
+  add_residuals(fit) %>% 
+  add_predictions(fit) %>% 
+  ggplot(aes(x = pred, y = resid)) + 
+  geom_point(size = 0.7) +
+  labs(title = "Residuals VS. Fitted Values", 
+       x = "Fitted value", 
+       y = "Residual")
+```
+
+According to the residuals against fitted values plot, the residuals roughly bounce randomly around the line of residual = 0. This suggests that the assumption that the relationship is linear is reasonable. However, there seems to be two outliers around the fitted value = 1000. 
+
+#### Compare our model to two other models 
+
+Creating a model using length at birth and gestational age as predictors: 
+
+```{r}
+fit_1 = lm(bwt ~ blength + gaweeks, data = birthweight)
+```
+
+Creating a model using head circumference, length, sex, and all interactions (including the three-way interaction) between these: 
+
+```{r}
+fit_2 = lm(bwt ~ bhead * blength * babysex, data = birthweight)
+```
+
+Make this comparison in terms of the cross-validated prediction error: 
+
+```{r}
+fit_cv = 
+  crossv_mc(birthweight, 100) %>% 
+  mutate(
+    train = map(train, as_tibble),
+    test = map(test, as_tibble),
+    fit_model = map(.x = train, ~lm(bwt ~ babysex + bhead + blength + delwt + fincome + gaweeks + mheight + mrace + parity + ppwt + smoken, data = .x)),
+    fit_1_model = map(.x = train, ~lm(bwt ~ blength + gaweeks, data = .x)),
+    fit_2_model = map(.x = train, ~lm(bwt ~ bhead * blength * babysex, data = .x))) %>% 
+  mutate(
+    fit_rmse = map2_dbl(fit_model, test, ~rmse(model = .x, data = .y)),
+    fit_1_rmse = map2_dbl(fit_1_model, test, ~rmse(model = .x, data = .y)),
+    fit_2_rmse = map2_dbl(fit_2_model, test, ~rmse(model = .x, data = .y))
+  )
+```
+
+Draw a violin plot for RMSE: 
+
+```{r}
+fit_cv %>% 
+  select(starts_with("rmse")) %>% 
+  pivot_longer(
+    everything(),
+    names_to = "model", 
+    values_to = "rmse",
+    names_prefix = "rmse_") %>% 
+  mutate(model = fct_inorder(model)) %>% 
+  ggplot(aes(x = model, y = rmse)) + 
+  geom_violin()
+```
+
